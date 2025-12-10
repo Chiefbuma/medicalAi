@@ -1,4 +1,4 @@
-# Self-hosted AI starter kit
+# Self-hosted AI starter kit (incl. Docling)
 
 **Self-hosted AI Starter Kit** is an open-source Docker Compose template designed to swiftly initialize a comprehensive local AI and low-code development environment.
 
