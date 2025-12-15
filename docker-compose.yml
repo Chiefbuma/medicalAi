@@ -161,11 +161,12 @@ services:
     ports:
       - 8080:80
     volumes:
-      - ./shared:/usr/share/nginx/html:ro
+      - ./shared/extracted-images:/usr/share/nginx/html:ro
     command: |
       sh -c "echo 'server {
         listen 80;
         root /usr/share/nginx/html;
+        index chat.html;
         autoindex on;
         location / {
           try_files \$$uri \$$uri/ =404;

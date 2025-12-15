@@ -1,2 +1,5 @@
 .env
-shared/
+shared/rag-files/pending/*
+!shared/rag-files/pending/.gitkeep
+shared/rag-files/processed/*
+!shared/rag-files/processed/.gitkeep
