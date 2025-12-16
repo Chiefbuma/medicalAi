@@ -95,8 +95,11 @@ for installation instructions, and run the starter kit as follows:
 git clone https://github.com/theaiautomators/self-hosted-ai-starter-kit.git
 cd self-hosted-ai-starter-kit
 cp .env.example .env # you should update secrets and passwords inside
-docker compose up
+docker compose --profile cpu up
 ```
+
+> [!NOTE]
+> The `--profile cpu` flag is required to start Docling. Without it, only the core services (n8n, PostgreSQL, Qdrant) will start.
 
 ##### For Mac users running OLLAMA locally
 
@@ -160,8 +163,8 @@ docker compose create && docker compose --profile gpu-nvidia up
 * ### For Mac / Apple Silicon users
 
 ```bash
-docker compose pull
-docker compose create && docker compose up
+docker compose --profile cpu pull
+docker compose create && docker compose --profile cpu up
 ```
 
 * ### For Non-GPU setups:
