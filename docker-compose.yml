@@ -112,14 +112,15 @@ services:
     command:
       - "-c"
       - |
-        # Only import if workflows table is empty (first run)
-        COUNT=$(n8n db:query "SELECT COUNT(*) as count FROM workflow_entity" 2>/dev/null | grep -o '[0-9]*' | head -1 || echo "0")
-        if [ "$COUNT" = "0" ] || [ -z "$COUNT" ]; then
+        # Only import if not already done (check marker file)
+        if [ -f /demo-data/.imported ]; then
+          echo "Demo data already imported - skipping"
+        else
           echo "First run detected - importing demo data..."
           n8n import:credentials --separate --input=/demo-data/credentials
           n8n import:workflow --separate --input=/demo-data/workflows
-        else
-          echo "Data already exists ($COUNT workflows) - skipping import"
+          touch /demo-data/.imported
+          echo "Import complete"
         fi
     volumes:
       - ./n8n/demo-data:/demo-data

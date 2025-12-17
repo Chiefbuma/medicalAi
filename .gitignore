@@ -3,3 +3,4 @@ shared/rag-files/pending/*
 !shared/rag-files/pending/.gitkeep
 shared/rag-files/processed/*
 !shared/rag-files/processed/.gitkeep
+n8n/demo-data/.imported
