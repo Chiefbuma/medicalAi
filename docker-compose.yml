@@ -111,7 +111,16 @@ services:
     entrypoint: /bin/sh
     command:
       - "-c"
-      - "n8n import:credentials --separate --input=/demo-data/credentials && n8n import:workflow --separate --input=/demo-data/workflows"
+      - |
+        # Only import if workflows table is empty (first run)
+        COUNT=$(n8n db:query "SELECT COUNT(*) as count FROM workflow_entity" 2>/dev/null | grep -o '[0-9]*' | head -1 || echo "0")
+        if [ "$COUNT" = "0" ] || [ -z "$COUNT" ]; then
+          echo "First run detected - importing demo data..."
+          n8n import:credentials --separate --input=/demo-data/credentials
+          n8n import:workflow --separate --input=/demo-data/workflows
+        else
+          echo "Data already exists ($COUNT workflows) - skipping import"
+        fi
     volumes:
       - ./n8n/demo-data:/demo-data
     depends_on:
