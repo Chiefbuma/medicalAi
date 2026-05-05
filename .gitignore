@@ -4,3 +4,5 @@ shared/rag-files/pending/*
 shared/rag-files/processed/*
 !shared/rag-files/processed/.gitkeep
 n8n/demo-data/.imported
+next-chat-ui/node_modules/
+next-chat-ui/.next/
