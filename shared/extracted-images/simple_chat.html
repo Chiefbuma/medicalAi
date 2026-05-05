@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My n8n Clinical Assistant</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+    #chat-window { border: 1px solid #ccc; border-radius: 8px; height: 500px; overflow-y: auto; padding: 10px; margin-bottom: 10px; background: #fafafa; }
+    #user-input { width: 78%; padding: 10px; }
+    button { padding: 10px 16px; }
+    .user-msg { text-align: right; margin: 6px 0; }
+    .bot-msg { text-align: left; margin: 6px 0; color: #1f2937; }
+  </style>
+</head>
+<body>
+  <h2>Clinical Assistant</h2>
+  <div id="chat-window"></div>
+  <input type="text" id="user-input" placeholder="Describe the patient's condition..." />
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    const N8N_WEBHOOK_URL = 'http://localhost:5678/webhook/8e20da7d-f205-43c3-950f-b97b8ccb3025/chat';
+
+    let sessionId = localStorage.getItem('n8n_session_id');
+    if (!sessionId) {
+      sessionId = 'session_' + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('n8n_session_id', sessionId);
+    }
+
+    const chatWindow = document.getElementById('chat-window');
+    const userInput = document.getElementById('user-input');
+
+    function addMessage(text, isUser) {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = isUser ? 'user-msg' : 'bot-msg';
+      msgDiv.innerText = text;
+      chatWindow.appendChild(msgDiv);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const message = userInput.value.trim();
+      if (!message) return;
+
+      addMessage(message, true);
+      userInput.value = '';
+      addMessage('...', false);
+
+      try {
+        const response = await fetch(N8N_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'sendMessage',
+            sessionId: sessionId,
+            chatInput: message
+          })
+        });
+
+        const data = await response.json();
+        chatWindow.removeChild(chatWindow.lastChild);
+        addMessage(data.output || data.message || data.text || 'No response from assistant.', false);
+      } catch (error) {
+        chatWindow.removeChild(chatWindow.lastChild);
+        addMessage('Error connecting to assistant.', false);
+        console.error('Error:', error);
+      }
+    }
+
+    userInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') sendMessage();
+    });
+  </script>
+</body>
+</html>
