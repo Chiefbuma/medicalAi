@@ -8,6 +8,11 @@ export type ChatIntent =
   | { type: "definition"; term?: string }
   | { type: "external_gap" }
   | { type: "disposition_question"; target: "admission" | "disposition" }
+  | {
+      type: "focused_question";
+      target: "medication" | "tests" | "management" | "diagnosis" | "surgery" | "referral" | "source";
+      mode: "yes_no" | "extract";
+    }
   | { type: "unclear"; reason: "control" | "too_short" | "incoherent" }
   | { type: "clinical"; isFollowUp: boolean; wantsDiagnostics: boolean; wantsManagement: boolean };
 
@@ -110,6 +115,25 @@ export function routeChatIntent(input: string): ChatIntent {
 
   if (/\b(?:what|which|repeat|confirm|tell me)\b.*\b(?:disposition|outcome)\b/.test(text)) {
     return { type: "disposition_question", target: "disposition" };
+  }
+
+  const yesNoStart = /^(?:does|do|is|are|will|can|could|should|would|need|confirm|verify|answer my question|please answer|just tell me)\b/.test(text);
+  const extractionStart = /^(?:what|which|list|show|repeat|just|only|just tell me|tell me)\b/.test(text);
+  type FocusedTarget = Extract<ChatIntent, { type: "focused_question" }>["target"];
+  const focusedTargets: Array<[FocusedTarget, RegExp]> = [
+    ["medication", /\b(?:medication|medicine|drug|antibiotic|dose|dosage|give|administer|prescribe)\b/],
+    ["tests", /\b(?:test|tests|investigation|investigations|diagnostic|labs?|cbc|fbc|ultrasound|x-?ray|scan)\b/],
+    ["management", /\b(?:management|manage|treatment|treat|therapy|plan)\b/],
+    ["diagnosis", /\b(?:diagnosis|diagnoses|condition|what is it|what does the patient have)\b/],
+    ["surgery", /\b(?:surgery|surgical|operation|debridement)\b/],
+    ["referral", /\b(?:referral|refer|consult|specialist|review)\b/],
+    ["source", /\b(?:source|citation|section|line|score)\b/],
+  ];
+
+  for (const [target, pattern] of focusedTargets) {
+    if (pattern.test(text) && (yesNoStart || extractionStart || /\b(?:needed|required|indicated|recommended)\b/.test(text))) {
+      return { type: "focused_question", target, mode: yesNoStart ? "yes_no" : "extract" };
+    }
   }
 
   if (/\b(?:from|on|search)\s+(?:the\s+)?(?:internet|online)\b/.test(text)) {

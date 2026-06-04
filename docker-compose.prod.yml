@@ -1,0 +1,119 @@
+services:
+  medassistant-postgres:
+    image: postgres:16-alpine
+    container_name: medassistant-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CLINICAL_POSTGRES_DB:?set CLINICAL_POSTGRES_DB}
+      POSTGRES_USER: ${CLINICAL_POSTGRES_USER:?set CLINICAL_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${CLINICAL_POSTGRES_PASSWORD:?set CLINICAL_POSTGRES_PASSWORD}
+    ports:
+      - "${CLINICAL_POSTGRES_BIND:-127.0.0.1}:${CLINICAL_POSTGRES_PUBLIC_PORT:-5545}:5432"
+    volumes:
+      - medassistant_postgres_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CLINICAL_POSTGRES_USER} -d ${CLINICAL_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medassistant_network
+
+  medassistant-qdrant:
+    image: qdrant/qdrant:latest
+    container_name: medassistant-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_BIND:-127.0.0.1}:${QDRANT_PUBLIC_PORT:-6334}:6333"
+    volumes:
+      - medassistant_qdrant_data:/qdrant/storage
+    networks:
+      - medassistant_network
+
+  medassistant-ollama:
+    image: ollama/ollama:latest
+    container_name: medassistant-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_BIND:-127.0.0.1}:${OLLAMA_PUBLIC_PORT:-11435}:11434"
+    volumes:
+      - medassistant_ollama_data:/root/.ollama
+    networks:
+      - medassistant_network
+
+  medassistant-ollama-pull:
+    image: ollama/ollama:latest
+    container_name: medassistant-ollama-pull
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://medassistant-ollama:11434
+    volumes:
+      - medassistant_ollama_data:/root/.ollama
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - "sleep 5; ollama pull ${OLLAMA_MODEL:-phi4-mini:3.8b}; ollama pull ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
+    depends_on:
+      - medassistant-ollama
+    networks:
+      - medassistant_network
+
+  medassistant-chat:
+    build:
+      context: ./next-chat-ui
+      dockerfile: Dockerfile
+    container_name: medassistant-chat
+    restart: unless-stopped
+    ports:
+      - "${MEDASSISTANT_BIND:-127.0.0.1}:${MEDASSISTANT_PORT:-3007}:3005"
+    environment:
+      NODE_ENV: production
+      TZ: Africa/Nairobi
+      OLLAMA_BASE_URL: http://medassistant-ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi4-mini:3.8b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:?set AUTH_SESSION_SECRET}
+      ADMIN_PHONE: ${ADMIN_PHONE:?set ADMIN_PHONE}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD}
+      QDRANT_URL: http://medassistant-qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-clinical_guidelines}
+      CLINICAL_POSTGRES_HOST: medassistant-postgres
+      CLINICAL_POSTGRES_PORT: 5432
+      CLINICAL_POSTGRES_USER: ${CLINICAL_POSTGRES_USER:?set CLINICAL_POSTGRES_USER}
+      CLINICAL_POSTGRES_PASSWORD: ${CLINICAL_POSTGRES_PASSWORD:?set CLINICAL_POSTGRES_PASSWORD}
+      CLINICAL_POSTGRES_DB: ${CLINICAL_POSTGRES_DB:?set CLINICAL_POSTGRES_DB}
+      SHARED_DATA_ROOT: /data/shared
+    volumes:
+      - ./shared:/data/shared:ro
+    depends_on:
+      medassistant-postgres:
+        condition: service_healthy
+      medassistant-qdrant:
+        condition: service_started
+      medassistant-ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3005/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - medassistant_network
+
+networks:
+  medassistant_network:
+    name: medassistant-network
+    driver: bridge
+
+volumes:
+  medassistant_postgres_data:
+    name: medassistant-postgres-data
+  medassistant_qdrant_data:
+    name: medassistant-qdrant-data
+  medassistant_ollama_data:
+    name: medassistant-ollama-data

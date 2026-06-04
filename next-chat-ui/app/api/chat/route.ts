@@ -608,6 +608,117 @@ ${reason}
 ${source ? `\n\nSource:\n${source}` : ""}`;
 }
 
+function answerFocusedQuestion(
+  target: "medication" | "tests" | "management" | "diagnosis" | "surgery" | "referral" | "source",
+  mode: "yes_no" | "extract",
+  messages: StoredChatMessage[],
+  contextualInput: string,
+) {
+  const clinicalResponse = latestClinicalAssistantMessage(messages);
+  const memory = caseMemoryFromContext(contextualInput);
+  const source = sourceFromResponse(clinicalResponse);
+
+  if (!clinicalResponse) {
+    return memory && !/No structured case facts/.test(memory)
+      ? `I need the pathway to be matched before I can answer that directly.
+
+Current case context:
+${memory}`
+      : "I need the patient presentation first before I can answer that directly.";
+  }
+
+  if (target === "source") {
+    return source ? `Source:\n${source}` : "I do not see a source line in the previous matched response.";
+  }
+
+  const management = sectionFromResponse(
+    clinicalResponse,
+    [/^management and medication guidance:?$/i, /^for this .*recommends:?$/i],
+    /^(would you check|possible diagnosis|recommended disposition|recommended diagnostic tests|source):?/i,
+  );
+  const tests = sectionFromResponse(
+    clinicalResponse,
+    [/^recommended diagnostic tests:?$/i],
+    /^(management|would you check|possible diagnosis|recommended disposition|source):?/i,
+  );
+  const diagnosis =
+    sectionFromResponse(
+      clinicalResponse,
+      [/^possible diagnosis based on clinical guidelines:?$/i, /^possible  diagnosis based on the clinical guidlines:?$/i],
+      /^(source|recommended disposition|management|would you check):?/i,
+    ) ||
+    sectionFromResponse(
+      clinicalResponse,
+      [/^what this means:?$/i],
+      /^(recommended disposition|recommended diagnostic tests|management|source):?/i,
+    ) ||
+    clinicalResponse.match(/for this\s+(.+?)\s+pathway/i)?.[1]?.trim() ||
+    clinicalResponse.match(/matches the\s+(.+?)\s+pathway/i)?.[1]?.trim();
+
+  const managementLower = management.toLowerCase();
+  const yesNo = (yes: boolean, yesText: string, noText: string, detail: string) =>
+    `${yes ? "Yes" : "No"}, ${yes ? yesText : noText}.${detail ? `\n\n${detail}` : ""}${source ? `\n\nSource:\n${source}` : ""}`;
+
+  if (target === "tests") {
+    if (mode === "yes_no") {
+      return yesNo(
+        Boolean(tests),
+        "diagnostic tests are listed for the matched pathway",
+        "no specific diagnostic tests are listed in the indexed pathway table for the matched pathway",
+        tests ? `Recommended diagnostic tests:\n${tests}` : "",
+      );
+    }
+    return tests
+      ? `Recommended diagnostic tests:\n${tests}${source ? `\n\nSource:\n${source}` : ""}`
+      : `No specific diagnostic tests are listed in the indexed pathway table for the matched pathway.${source ? `\n\nSource:\n${source}` : ""}`;
+  }
+
+  if (target === "management") {
+    return management
+      ? `Management and medication guidance:\n${management}${source ? `\n\nSource:\n${source}` : ""}`
+      : `No specific management text is listed in the latest matched pathway response.${source ? `\n\nSource:\n${source}` : ""}`;
+  }
+
+  if (target === "medication") {
+    const hasMedication = /\b(?:give|administer|prescribe|iv|oral|im|mg|g\/kg|antibiotic|flucloxacillin|metronidazole|ceftriaxone|paracetamol|insulin|salbutamol|hydrocortisone)\b/.test(
+      managementLower,
+    );
+    return mode === "yes_no"
+      ? yesNo(hasMedication, "medication is recommended in the matched pathway", "no medication is listed in the latest matched pathway response", management ? `Medication/management text:\n${management}` : "")
+      : management
+        ? `Medication/management text:\n${management}${source ? `\n\nSource:\n${source}` : ""}`
+        : `No medication is listed in the latest matched pathway response.${source ? `\n\nSource:\n${source}` : ""}`;
+  }
+
+  if (target === "surgery") {
+    const hasSurgery = /\b(?:surgical review|surgery|operation|debridement|surgeon)\b/.test(managementLower);
+    return yesNo(
+      hasSurgery,
+      "surgical review or surgery-related care is recommended",
+      "surgery is not listed in the latest matched pathway response",
+      hasSurgery ? `Relevant text:\n${management}` : "",
+    );
+  }
+
+  if (target === "referral") {
+    const hasReferral = /\b(?:refer|referral|consult|specialist|review|gynaecological review|surgical review|physician)\b/.test(managementLower);
+    return yesNo(
+      hasReferral,
+      "specialist review or referral is recommended",
+      "specialist review or referral is not listed in the latest matched pathway response",
+      hasReferral ? `Relevant text:\n${management}` : "",
+    );
+  }
+
+  if (target === "diagnosis") {
+    return diagnosis
+      ? `Likely matched diagnosis/pathway:\n${diagnosis}${source ? `\n\nSource:\n${source}` : ""}`
+      : `I do not see a diagnosis section in the latest matched pathway response.${source ? `\n\nSource:\n${source}` : ""}`;
+  }
+
+  return null;
+}
+
 function repeatPreviousAnswer(
   focus: "management" | "tests" | "source" | "all" | undefined,
   messages: StoredChatMessage[],
@@ -867,6 +978,9 @@ function answerNonRetrievalIntent(
   if (routedIntent.type === "clarification") return answerClarification(routedIntent.term, messages, contextualInput);
   if (routedIntent.type === "disposition_question") {
     return answerDispositionQuestion(routedIntent.target, messages, contextualInput);
+  }
+  if (routedIntent.type === "focused_question") {
+    return answerFocusedQuestion(routedIntent.target, routedIntent.mode, messages, contextualInput);
   }
   if (routedIntent.type === "rationale") {
     const answer = answerRationaleQuestion(routedIntent.fact, contextualInput);
