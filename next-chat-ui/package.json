@@ -6,10 +6,22 @@
     "dev": "next dev -p 3005",
     "build": "next build",
     "start": "next start -p 3005",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:negation": "node scripts/negation-regression.mjs"
   },
   "dependencies": {
-    "next": "14.2.5",
+    "@langchain/core": "^1.1.48",
+    "@langchain/ollama": "^1.2.7",
+    "@langchain/openai": "^1.4.7",
+    "@langchain/qdrant": "^1.0.3",
+    "@napi-rs/canvas": "^0.1.100",
+    "@types/pg": "^8.20.0",
+    "framer-motion": "^12.40.0",
+    "langchain": "^1.4.2",
+    "next": "^16.2.7",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.6.205",
+    "pg": "^8.21.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -18,5 +30,8 @@
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "typescript": "5.5.3"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
   }
 }

@@ -1,6 +1,7 @@
 volumes:
   n8n_storage:
   postgres_storage:
+  clinical_postgres_storage:
   ollama_storage:
   qdrant_storage:
   docling_data:
@@ -48,7 +49,7 @@ x-init-ollama: &init-ollama
     - OLLAMA_HOST=ollama:11434
   command:
     - "-c"
-    - "sleep 3; ollama pull llama3.2"
+    - "sleep 3; ollama pull phi4-mini:3.8b; ollama pull llama3.2"
 
 # ===========================================
 # Docling Base Configuration (YAML Anchor)
@@ -100,6 +101,26 @@ services:
       - postgres_storage:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clinical-postgres:
+    image: postgres:16-alpine
+    hostname: clinical-postgres
+    container_name: clinical-postgres
+    networks: ['demo']
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${CLINICAL_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${CLINICAL_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${CLINICAL_POSTGRES_DB}
+    ports:
+      - ${CLINICAL_POSTGRES_PORT:-5433}:5432
+    volumes:
+      - clinical_postgres_storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${CLINICAL_POSTGRES_USER} -d ${CLINICAL_POSTGRES_DB}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -185,6 +206,45 @@ services:
           add_header Access-Control-Allow-Origin *;
         }
       }' > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+
+  next-chat-ui:
+    build:
+      context: ./next-chat-ui
+      network: host
+    hostname: next-chat-ui
+    networks: ['demo']
+    restart: unless-stopped
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi4-mini:3.8b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET:-}
+      - ADMIN_PHONE=${ADMIN_PHONE:-+254700000000}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@12345}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-clinical_guidelines}
+      - CLINICAL_POSTGRES_HOST=clinical-postgres
+      - CLINICAL_POSTGRES_PORT=5432
+      - CLINICAL_POSTGRES_USER=${CLINICAL_POSTGRES_USER}
+      - CLINICAL_POSTGRES_PASSWORD=${CLINICAL_POSTGRES_PASSWORD}
+      - CLINICAL_POSTGRES_DB=${CLINICAL_POSTGRES_DB}
+      - SHARED_DATA_ROOT=/data/shared
+    ports:
+      - ${NEXT_CHAT_UI_PORT:-3005}:3005
+    volumes:
+      - ./shared:/data/shared:ro
+    depends_on:
+      - qdrant
+      - clinical-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3005/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   ollama-cpu:
     profiles: ["cpu"]

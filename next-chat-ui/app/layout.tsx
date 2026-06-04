@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Clinical Assistant",
-  description: "ChatGPT-style clinical assistant UI powered by n8n",
+  title: "RadiantMedAI",
+  description: "RadiantMedAI clinical chat UI powered by LangChain, Ollama, and Qdrant",
 };
 
 export default function RootLayout({
