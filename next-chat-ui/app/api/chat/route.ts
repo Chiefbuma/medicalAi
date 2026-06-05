@@ -22,6 +22,7 @@ import { getSessionUserId } from "@/lib/auth-session";
 import { routeChatIntent } from "@/lib/rag/intent-router";
 import { reformulateClinicalQuery } from "@/lib/rag/query-reformulation";
 import { formatConfidenceRefusal, guidelineConfidenceGate } from "@/lib/rag/confidence-gate";
+import { buildDifferentialDiagnosisAnswer } from "@/lib/rag/differential-diagnosis-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 900;
@@ -1078,6 +1079,7 @@ export async function POST(req: Request) {
       routedIntent.type === "clinical"
         ? reformulateClinicalQuery(chatInput, contextualInput, routedIntent.isFollowUp)
         : contextualInput;
+    const differentialAnswer = routedIntent.type === "clinical" ? buildDifferentialDiagnosisAnswer(clinicalQuery) : null;
 
     const encoder = new TextEncoder();
 
@@ -1117,6 +1119,13 @@ export async function POST(req: Request) {
             }
 
             write(cleanAssistantOutput(modelText) || "I need a clearer term to define.");
+            await saveChatMessageBestEffort(sessionId, userId, "assistant", assistantText);
+            controller.close();
+            return;
+          }
+
+          if (differentialAnswer) {
+            write(differentialAnswer);
             await saveChatMessageBestEffort(sessionId, userId, "assistant", assistantText);
             controller.close();
             return;
