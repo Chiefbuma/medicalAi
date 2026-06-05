@@ -34,6 +34,68 @@ function firstNumber(text: string, patterns: RegExp[]) {
   return null;
 }
 
+function booleanFact(text: string, positive: RegExp, negative: RegExp) {
+  if (negative.test(text)) return false;
+  if (positive.test(text)) return true;
+  return undefined;
+}
+
+function testResult(text: string, subject: RegExp) {
+  const positive = new RegExp(`(?:${subject.source}).{0,50}(?:positive|\\+|detected|reactive)|(?:positive|\\+|detected|reactive).{0,50}(?:${subject.source})`);
+  const negative = new RegExp(`(?:${subject.source}).{0,50}(?:negative|not detected|non-reactive|non reactive|absent)|(?:negative|not detected|non-reactive|non reactive|absent).{0,50}(?:${subject.source})`);
+  if (negative.test(text)) return "negative";
+  if (positive.test(text)) return "positive";
+  return undefined;
+}
+
+function highLowStatus(text: string, subject: RegExp) {
+  const high = new RegExp(`(?:${subject.source}).{0,50}(?:high|raised|elevated|above normal|above range|more than normal|increased)|(?:high|raised|elevated|above normal|above range|increased).{0,50}(?:${subject.source})`);
+  const low = new RegExp(`(?:${subject.source}).{0,50}(?:low|reduced|below normal|below range|less than normal|decreased)|(?:low|reduced|below normal|below range|decreased).{0,50}(?:${subject.source})`);
+  const normal = new RegExp(`(?:${subject.source}).{0,50}(?:normal|within normal|within range)|(?:normal|within normal|within range).{0,50}(?:${subject.source})`);
+  if (high.test(text)) return "high";
+  if (low.test(text)) return "low";
+  if (normal.test(text)) return "normal";
+  return undefined;
+}
+
+function comparativeStatus(text: string, subject: RegExp, threshold: number, unit?: RegExp) {
+  const unitPart = unit ? `\\s*(?:${unit.source})` : "";
+  const above = new RegExp(
+    `(?:${subject.source}).{0,30}(?:above|over|more than|greater than|>|>=)\\s*${threshold}${unitPart}|(?:above|over|more than|greater than|>|>=)\\s*${threshold}${unitPart}.{0,30}(?:${subject.source})`,
+  );
+  const below = new RegExp(
+    `(?:${subject.source}).{0,30}(?:below|under|less than|lower than|<|<=)\\s*${threshold}${unitPart}|(?:below|under|less than|lower than|<|<=)\\s*${threshold}${unitPart}.{0,30}(?:${subject.source})`,
+  );
+  const equalOrAbove = new RegExp(
+    `(?:${subject.source}).{0,30}(?:at least|not less than|>=)\\s*${threshold}${unitPart}|(?:at least|not less than|>=)\\s*${threshold}${unitPart}.{0,30}(?:${subject.source})`,
+  );
+  const equalOrBelow = new RegExp(
+    `(?:${subject.source}).{0,30}(?:at most|not more than|<=)\\s*${threshold}${unitPart}|(?:at most|not more than|<=)\\s*${threshold}${unitPart}.{0,30}(?:${subject.source})`,
+  );
+  if (above.test(text)) return "above";
+  if (below.test(text)) return "below";
+  if (equalOrAbove.test(text)) return "at_least";
+  if (equalOrBelow.test(text)) return "at_most";
+  return undefined;
+}
+
+function cbcStatus(text: string) {
+  if (/granulocytosis|neutrophilia|leucocytosis|leukocytosis|high white cell|high wbc|wbc high|white cell.*high/.test(text)) {
+    return "granulocytosis";
+  }
+  if (/lymphocytosis/.test(text)) return "lymphocytosis";
+  if (/thrombocytopenia|low platelet|platelet.*low|platelets.*low/.test(text)) return "thrombocytopenia";
+  if (
+    /anaemia|anemia|low haemoglobin|low hemoglobin|low hb|hb low|haemoglobin.*low|hemoglobin.*low|blood count.*low|low blood count|cbc.*low|fbc.*low|(?:cbc|fbc|blood count).*?(?:less than|below|<)\s*\d/.test(
+      text,
+    )
+  ) {
+    return "anaemia";
+  }
+  if (/normal.*(?:cbc|fbc|blood count)|(?:cbc|fbc|blood count).*normal/.test(text)) return "normal";
+  return undefined;
+}
+
 function extractClinicalFacts(input: string) {
   const text = input.toLowerCase();
   const ageYears = firstNumber(text, [
@@ -58,34 +120,35 @@ function extractClinicalFacts(input: string) {
   const glucose = firstNumber(text, [/(?:glucose|blood sugar).*?(\d+(?:\.\d+)?)/]);
   const ph = firstNumber(text, [/\bpH\s*(?:is|=|:)?\s*(\d+(?:\.\d+)?)/i]);
   const bicarbonate = firstNumber(text, [/(?:bicarbonate|hco3).*?(\d+(?:\.\d+)?)/]);
-  const haemoglobin = firstNumber(text, [/(?:haemoglobin|hemoglobin|hb).*?(\d+(?:\.\d+)?)/]);
+  const haemoglobin =
+    firstNumber(text, [/(?:haemoglobin|hemoglobin|hb).*?(\d+(?:\.\d+)?)/]) ??
+    firstNumber(text, [
+      /(?:cbc|fbc|blood count).*?(?:less than|below|<)\s*(\d+(?:\.\d+)?)/,
+      /(?:less than|below|<)\s*(\d+(?:\.\d+)?).*?(?:cbc|fbc|blood count)/,
+    ]);
   const bloodLossMl = firstNumber(text, [/(\d{3,4})\s*(?:ml|millilit)/]);
+  const ageDay60 = comparativeStatus(text, /age|aged|child|infant|baby|neonate|newborn/, 60, /days?|day/);
+  const ageMonth3 = comparativeStatus(text, /age|aged|child|infant|baby/, 3, /months?|mos?|mo/);
+  const ageMonth6 = comparativeStatus(text, /age|aged|child|infant|baby/, 6, /months?|mos?|mo/);
+  const gestation20 = comparativeStatus(text, /gestation|pregnan|weeks pregnant/, 20, /weeks?|wks?/);
 
-  const shock = shockPattern.test(text) ? true : stablePattern.test(text) ? false : undefined;
-  const pregnant = /not pregnant|non-pregnant|non pregnant|pregnancy test negative|negative pregnancy test/.test(text)
-    ? false
-    : /pregnan|gestation|antenatal/.test(text)
-      ? true
-      : undefined;
-  const activeBleeding = /bleeding stopped|bleeding resolved|no active bleeding|no bleeding|resolved/.test(text)
-    ? false
-    : /active bleeding|ongoing bleeding|still bleeding|continued bleeding|bleeding/.test(text)
-      ? true
-      : undefined;
-  const malaria = /malaria.*positive|positive.*malaria/.test(text)
-    ? "positive"
-    : /malaria.*negative|negative.*malaria/.test(text)
-      ? "negative"
-      : undefined;
-  const cbc = /granulocytosis/.test(text)
-    ? "granulocytosis"
-    : /lymphocytosis/.test(text)
-      ? "lymphocytosis"
-      : /thrombocytopenia/.test(text)
-        ? "thrombocytopenia"
-        : /normal.*(?:cbc|fbc|blood count)|(?:cbc|fbc|blood count).*normal|low blood count/.test(text)
-          ? "normal"
-          : undefined;
+  const shock = booleanFact(text, shockPattern, stablePattern);
+  const pregnant = booleanFact(
+    text,
+    /pregnan|gestation|antenatal|weeks pregnant/,
+    /not pregnant|non-pregnant|non pregnant|pregnancy test negative|negative pregnancy test/,
+  );
+  const activeBleeding = booleanFact(
+    text,
+    /active bleeding|ongoing bleeding|still bleeding|continued bleeding|fresh bleeding|heavy bleeding|bleeding/,
+    /bleeding stopped|bleeding resolved|no active bleeding|no bleeding|resolved|dry pad/,
+  );
+  const malaria = testResult(text, /malaria|mps|rdt|antigen/);
+  const cbc = cbcStatus(text);
+  const potassiumStatus = highLowStatus(text, /potassium|k\+/);
+  const sodiumStatus = highLowStatus(text, /sodium|na\+/);
+  const glucoseStatus = highLowStatus(text, /glucose|blood sugar|rbs|random blood sugar/);
+  const hPylori = testResult(text, /h\.?\s*pylori|helicobacter pylori/);
 
   return {
     text,
@@ -102,17 +165,40 @@ function extractClinicalFacts(input: string) {
     bicarbonate,
     haemoglobin,
     bloodLossMl,
+    ageDay60,
+    ageMonth3,
+    ageMonth6,
+    gestation20,
+    potassiumStatus,
+    sodiumStatus,
+    glucoseStatus,
     shock,
     pregnant,
     activeBleeding,
     malaria,
     cbc,
-    neurological: /confusion|hallucination|abnormal posturing|reduced consciousness|unconscious|letharg/.test(text),
-    convulsions: /convulsion|seizure/.test(text),
-    respiratory: /fast breathing|difficulty breathing|difficult breathing|pneumonia|chest indrawing|wheeze|respiratory distress/.test(text),
-    urinary: /dysuria|urinary|flank pain|suprapubic|haematuria|hematuria|pyuria/.test(text),
-    earPain: /ear pain|otitis|otorrhoea|mastoid/.test(text),
-    targetOrgan: /severe headache|blurred vision|epigastric pain|oliguria|liver tenderness|target organ|seizure/.test(text),
+    neurological: booleanFact(
+      text,
+      /confusion|hallucination|abnormal posturing|reduced consciousness|unconscious|letharg|drows/,
+      /no neurological|without neurological|normal mental state|alert|no confusion|not confused|conscious/,
+    ),
+    convulsions: booleanFact(text, /convulsion|seizure|fits?/, /no convulsion|no seizure|without convulsion|without seizure|no fits?/),
+    respiratory: booleanFact(
+      text,
+      /fast breathing|difficulty breathing|difficult breathing|pneumonia|chest indrawing|wheeze|respiratory distress|cough/,
+      /no respiratory distress|no wheeze|no fast breathing|no difficult breathing|no chest indrawing|normal breathing/,
+    ),
+    urinary: booleanFact(
+      text,
+      /dysuria|urinary|flank pain|suprapubic|haematuria|hematuria|pyuria/,
+      /no dysuria|no urinary|no flank pain|no suprapubic|no haematuria|no hematuria|no pyuria/,
+    ),
+    earPain: booleanFact(text, /ear pain|otitis|otorrhoea|mastoid/, /no ear pain|no otitis|no otorrhoea|no ear discharge|no mastoid/),
+    targetOrgan: booleanFact(
+      text,
+      /severe headache|blurred vision|epigastric pain|oliguria|liver tenderness|target organ|seizure/,
+      /no target organ|without target organ|no severe headache|no blurred vision|no epigastric pain|no oliguria|no liver tenderness/,
+    ),
     severeHypertension: /\b1[6-9]\d\s*\/|\/\s*1[1-9]\d\b|180\s*\/\s*110/.test(text),
     mildHypertension: /140\s*\/\s*90|hypertension|high blood pressure|elevated blood pressure/.test(text),
     associatedHeadFeatures: noAssociatedHeadFeaturesPattern.test(text)
@@ -127,30 +213,22 @@ function extractClinicalFacts(input: string) {
         : /superficial|first degree/.test(text)
           ? "superficial"
           : undefined,
-    specialAreaBurn: /face|hands?|feet|foot|genitalia|perineum|major joints?|head/.test(text)
-      ? true
-      : /no special area|not.*(?:face|hand|feet|foot|genitalia|perineum|joint)/.test(text)
-        ? false
-        : undefined,
+    specialAreaBurn: booleanFact(
+      text,
+      /face|hands?|feet|foot|genitalia|perineum|major joints?|head/,
+      /no special area|not.*(?:face|hand|feet|foot|genitalia|perineum|joint)|no.*(?:face|hand|feet|foot|genitalia|perineum|joint)/,
+    ),
     burnHighRisk: /electrical|chemical|inhalation|circumferential|concomitant trauma|comorbid|pre-existing/.test(text),
-    bloodyVomitus: /bloody vomit|vomit.*blood|haematemesis|hematemesis/.test(text)
-      ? true
-      : /non-bloody vomit|no bloody vomit|no blood in vomit/.test(text)
-        ? false
-        : undefined,
-    vomiting: /no vomiting|not vomiting|without vomiting/.test(text) ? false : /vomit|emesis/.test(text) ? true : undefined,
-    hPylori: /h\.?\s*pylori.*positive|positive.*h\.?\s*pylori/.test(text)
-      ? "positive"
-      : /h\.?\s*pylori.*negative|negative.*h\.?\s*pylori/.test(text)
-        ? "negative"
-        : undefined,
+    bloodyVomitus: booleanFact(text, /bloody vomit|vomit.*blood|haematemesis|hematemesis/, /non-bloody vomit|no bloody vomit|no blood in vomit|no haematemesis|no hematemesis/),
+    vomiting: booleanFact(text, /vomit|emesis/, /no vomiting|not vomiting|without vomiting|denies vomiting|vomiting resolved|vomiting stopped/),
+    hPylori,
     percussion: /hyper-?resonant|hyperresonant/.test(text) ? "hyper-resonant" : /dull percussion|dull note/.test(text) ? "dull" : /normal percussion|normal note/.test(text) ? "normal" : undefined,
-    dehydration: /severe dehydration|plan c|6%|shock|mottled|deep acidotic/.test(text)
-      ? "severe"
+    dehydration: /no dehydration|plan a/.test(text)
+      ? "none"
       : /moderate dehydration|some dehydration|plan b|4-6%|4\s*to\s*6%|delayed capillary refill/.test(text)
         ? "some"
-        : /no dehydration|plan a/.test(text)
-          ? "none"
+        : /severe dehydration|plan c|6%|shock|mottled|deep acidotic/.test(text)
+          ? "severe"
           : undefined,
     volumeStatus: /hypovolaemic|hypovolemic/.test(text)
       ? "hypovolemic"
@@ -226,8 +304,11 @@ const rules: DifferentialRule[] = [
     id: "pvb_pregnant_under_20_shock",
     condition: "Per vaginal bleeding",
     conditionPattern: /vaginal bleeding|pv bleeding|per vaginal|pregnan.*bleed|bleed.*pregnan|abortion|miscarriage/,
-    match: (f) => f.pregnant === true && f.shock === true && f.gestationWeeks !== null && f.gestationWeeks < 20,
-    missing: (f) => missingFacts(f, [["pregnancy status", f.pregnant !== undefined], ["gestation weeks", f.gestationWeeks !== null], ["shock status", f.shock !== undefined]]),
+    match: (f) =>
+      f.pregnant === true &&
+      f.shock === true &&
+      ((f.gestationWeeks !== null && f.gestationWeeks < 20) || f.gestation20 === "below"),
+    missing: (f) => missingFacts(f, [["pregnancy status", f.pregnant !== undefined], ["gestation weeks", f.gestationWeeks !== null || Boolean(f.gestation20)], ["shock status", f.shock !== undefined]]),
     diagnosis: "Abortion complicated by haemodynamic instability.",
     disposition: "admit",
     severity: "critical",
@@ -239,8 +320,11 @@ const rules: DifferentialRule[] = [
     id: "pvb_pregnant_over_20_shock",
     condition: "Per vaginal bleeding",
     conditionPattern: /vaginal bleeding|pv bleeding|per vaginal|pregnan.*bleed|bleed.*pregnan|antepartum/,
-    match: (f) => f.pregnant === true && f.shock === true && f.gestationWeeks !== null && f.gestationWeeks > 20,
-    missing: (f) => missingFacts(f, [["pregnancy status", f.pregnant !== undefined], ["gestation weeks", f.gestationWeeks !== null], ["shock status", f.shock !== undefined]]),
+    match: (f) =>
+      f.pregnant === true &&
+      f.shock === true &&
+      ((f.gestationWeeks !== null && f.gestationWeeks > 20) || f.gestation20 === "above"),
+    missing: (f) => missingFacts(f, [["pregnancy status", f.pregnant !== undefined], ["gestation weeks", f.gestationWeeks !== null || Boolean(f.gestation20)], ["shock status", f.shock !== undefined]]),
     diagnosis: "Antepartum haemorrhage until proven otherwise.",
     disposition: "admit",
     severity: "critical",
@@ -278,7 +362,7 @@ const rules: DifferentialRule[] = [
     id: "fever_no_danger_normal_malaria_negative",
     condition: "Hotness of body",
     conditionPattern: /fever|hotness|pyrexia/,
-    match: (f) => !f.neurological && !f.convulsions && f.cbc === "normal" && f.malaria === "negative" && !(f.haemoglobin !== null && f.haemoglobin < 10),
+    match: (f) => f.neurological !== true && f.convulsions !== true && f.cbc === "normal" && f.malaria === "negative" && !(f.haemoglobin !== null && f.haemoglobin < 10),
     missing: (f) => missingFacts(f, [["CBC result", Boolean(f.cbc)], ["malaria result", Boolean(f.malaria)]]),
     diagnosis: "Viral or self-limiting illness.",
     disposition: "outpatient",
@@ -330,7 +414,7 @@ const rules: DifferentialRule[] = [
     id: "fever_severe_malaria_or_mixed",
     condition: "Hotness of body",
     conditionPattern: /fever|hotness|pyrexia|malaria/,
-    match: (f) => f.malaria === "positive" && (f.cbc === "granulocytosis" || f.cbc === "thrombocytopenia" || (f.haemoglobin !== null && f.haemoglobin < 10)),
+    match: (f) => f.malaria === "positive" && (f.cbc === "granulocytosis" || f.cbc === "thrombocytopenia" || f.cbc === "anaemia" || (f.haemoglobin !== null && f.haemoglobin < 10)),
     missing: (f) => missingFacts(f, [["malaria result", Boolean(f.malaria)], ["CBC or haemoglobin severity result", Boolean(f.cbc) || f.haemoglobin !== null]]),
     diagnosis: "Malaria with bacterial infection or severity features.",
     disposition: "admit",
@@ -343,7 +427,7 @@ const rules: DifferentialRule[] = [
     id: "fever_neurological",
     condition: "Hotness of body",
     conditionPattern: /fever|hotness|pyrexia|confusion|hallucination|abnormal posturing/,
-    match: (f) => f.neurological,
+    match: (f) => f.neurological === true,
     missing: () => [],
     diagnosis: "Fever with neurological symptoms: CNS infection, metabolic derangement, or severe malaria must be considered.",
     disposition: "admit",
@@ -356,8 +440,8 @@ const rules: DifferentialRule[] = [
     id: "fever_under_60_days_convulsions",
     condition: "Hotness of body",
     conditionPattern: /fever|hotness|pyrexia|convulsion|seizure/,
-    match: (f) => f.ageDays !== null && f.ageDays < 60 && f.convulsions,
-    missing: (f) => missingFacts(f, [["age in days", f.ageDays !== null], ["convulsions present or absent", /convulsion|seizure|no convulsion|no seizure/.test(f.text)]]),
+    match: (f) => ((f.ageDays !== null && f.ageDays < 60) || f.ageDay60 === "below") && f.convulsions === true,
+    missing: (f) => missingFacts(f, [["age in days", f.ageDays !== null || Boolean(f.ageDay60)], ["convulsions present or absent", /convulsion|seizure|no convulsion|no seizure/.test(f.text)]]),
     diagnosis: "Possible neonatal sepsis or meningitis.",
     disposition: "admit",
     severity: "critical",
@@ -369,8 +453,8 @@ const rules: DifferentialRule[] = [
     id: "pneumonia_child_over_60_days",
     condition: "Hotness of body",
     conditionPattern: /pneumonia|fast breathing|difficult breathing|difficulty breathing|chest indrawing|cough/,
-    match: (f) => f.respiratory && f.ageDays !== null && f.ageDays > 60,
-    missing: (f) => missingFacts(f, [["age in days", f.ageDays !== null], ["pneumonia severity signs", /very severe|severe pneumonia|non-severe|chest indrawing|tachypnoea|fast breathing|central cyanosis|unable to feed|convulsion|letharg/.test(f.text)]]),
+    match: (f) => f.respiratory === true && ((f.ageDays !== null && f.ageDays > 60) || f.ageDay60 === "above"),
+    missing: (f) => missingFacts(f, [["age in days", f.ageDays !== null || Boolean(f.ageDay60)], ["pneumonia severity signs", /very severe|severe pneumonia|non-severe|chest indrawing|tachypnoea|fast breathing|central cyanosis|unable to feed|convulsion|letharg/.test(f.text)]]),
     diagnosis: "Fever with fast or difficult breathing in child over 60 days.",
     disposition: "depends_on_severity",
     severity: "urgent",
@@ -382,8 +466,8 @@ const rules: DifferentialRule[] = [
     id: "fever_otitis",
     condition: "Hotness of body",
     conditionPattern: /ear pain|otitis|otorrhoea|mastoid/,
-    match: (f) => f.earPain,
-    missing: (f) => missingFacts(f, [["age in months", f.ageMonths !== null || f.ageDays !== null], ["complicated ear signs", /otorrhoea|mastoid|cranial nerve|complicated|uncomplicated/.test(f.text)]]),
+    match: (f) => f.earPain === true,
+    missing: (f) => missingFacts(f, [["age in months", f.ageMonths !== null || f.ageDays !== null || Boolean(f.ageMonth3) || Boolean(f.ageMonth6)], ["complicated ear signs", /otorrhoea|mastoid|cranial nerve|complicated|uncomplicated/.test(f.text)]]),
     diagnosis: "Fever with ear pain / otitis media.",
     disposition: "depends_on_age_and_complications",
     severity: "urgent",
@@ -395,7 +479,7 @@ const rules: DifferentialRule[] = [
     id: "fever_uti",
     condition: "Hotness of body",
     conditionPattern: /dysuria|urinary|flank pain|suprapubic|haematuria|hematuria|pyuria/,
-    match: (f) => f.urinary,
+    match: (f) => f.urinary === true,
     missing: () => [],
     diagnosis: "Urinary tract infection pathway.",
     disposition: "depends_on_complication",
@@ -408,8 +492,8 @@ const rules: DifferentialRule[] = [
     id: "bp_pregnancy",
     condition: "Elevated blood pressure in pregnancy",
     conditionPattern: /pregnan.*(?:blood pressure|bp|hypertension|pre-?eclampsia)|(?:blood pressure|bp|hypertension|pre-?eclampsia).*pregnan/,
-    match: (f) => f.pregnant === true && f.gestationWeeks !== null && (f.mildHypertension || f.severeHypertension),
-    missing: (f) => missingFacts(f, [["gestation weeks", f.gestationWeeks !== null], ["blood pressure", f.mildHypertension || f.severeHypertension], ["target-organ symptoms present or absent", /target organ|severe headache|blurred vision|epigastric pain|oliguria|liver tenderness|no target|no severe headache|no blurred/.test(f.text)]]),
+    match: (f) => f.pregnant === true && (f.gestationWeeks !== null || Boolean(f.gestation20)) && Boolean(f.mildHypertension || f.severeHypertension),
+    missing: (f) => missingFacts(f, [["gestation weeks", f.gestationWeeks !== null || Boolean(f.gestation20)], ["blood pressure", Boolean(f.mildHypertension || f.severeHypertension)], ["target-organ symptoms present or absent", /target organ|severe headache|blurred vision|epigastric pain|oliguria|liver tenderness|no target|no severe headache|no blurred/.test(f.text)]]),
     diagnosis: "Pregnancy hypertension branch depends on gestation and target-organ damage.",
     disposition: "admit_or_observe",
     severity: "urgent",
@@ -549,8 +633,8 @@ const rules: DifferentialRule[] = [
     id: "hyperkalaemia",
     condition: "Hyperkalaemia",
     conditionPattern: /hyperkalaemia|hyperkalemia|potassium|high k\+|k\+/,
-    match: (f) => f.potassium !== null || /potassium.*above normal|above normal.*potassium|high potassium|hyperkalaemia|hyperkalemia/.test(f.text),
-    missing: (f) => missingFacts(f, [["serum potassium above normal or numeric level", f.potassium !== null || /above normal|high potassium|hyperkalaemia|hyperkalemia/.test(f.text)]]),
+    match: (f) => f.potassium !== null || f.potassiumStatus === "high" || /potassium.*above normal|above normal.*potassium|high potassium|hyperkalaemia|hyperkalemia/.test(f.text),
+    missing: (f) => missingFacts(f, [["serum potassium above normal or numeric level", f.potassium !== null || f.potassiumStatus === "high" || /above normal|high potassium|hyperkalaemia|hyperkalemia/.test(f.text)]]),
     diagnosis: "Confirmed hyperkalaemia management.",
     disposition: "depends_on_response",
     severity: "critical",
@@ -562,8 +646,8 @@ const rules: DifferentialRule[] = [
     id: "dka",
     condition: "Diabetic ketoacidosis",
     conditionPattern: /diabetic ketoacidosis|\bdka\b|ketone|kussmaul|polyuria|polydipsia/,
-    match: (f) => conditionMentioned(f, /diabetic ketoacidosis|\bdka\b|ketone|kussmaul|polyuria|polydipsia/) || (f.glucose !== null && f.glucose > 11),
-    missing: (f) => missingFacts(f, [["blood glucose", f.glucose !== null || /blood sugar|glucose/.test(f.text)], ["ketones", /ketone/.test(f.text)], ["pH or bicarbonate", f.ph !== null || f.bicarbonate !== null], ["dehydration status", Boolean(f.dehydration)]]),
+    match: (f) => conditionMentioned(f, /diabetic ketoacidosis|\bdka\b|ketone|kussmaul|polyuria|polydipsia/) || f.glucoseStatus === "high" || (f.glucose !== null && f.glucose > 11),
+    missing: (f) => missingFacts(f, [["blood glucose", f.glucose !== null || Boolean(f.glucoseStatus) || /blood sugar|glucose/.test(f.text)], ["ketones", /ketone/.test(f.text)], ["pH or bicarbonate", f.ph !== null || f.bicarbonate !== null], ["dehydration status", Boolean(f.dehydration)]]),
     diagnosis: "Diabetic ketoacidosis management pathway.",
     disposition: "admit",
     severity: "critical",
@@ -588,8 +672,8 @@ const rules: DifferentialRule[] = [
     id: "hypernatraemia",
     condition: "Hypernatraemia",
     conditionPattern: /hypernatraemia|hypernatremia|high sodium|sodium.*(?:above|high|raised|elevated)/,
-    match: (f) => (f.sodium !== null && f.sodium > 150) || /sodium.*above 150|hypernatraemia|hypernatremia|high sodium/.test(f.text),
-    missing: (f) => missingFacts(f, [["serum sodium", f.sodium !== null || /above 150|high sodium|hypernatraemia|hypernatremia/.test(f.text)]]),
+    match: (f) => (f.sodium !== null && f.sodium > 150) || f.sodiumStatus === "high" || /sodium.*above 150|hypernatraemia|hypernatremia|high sodium/.test(f.text),
+    missing: (f) => missingFacts(f, [["serum sodium", f.sodium !== null || f.sodiumStatus === "high" || /above 150|high sodium|hypernatraemia|hypernatremia/.test(f.text)]]),
     diagnosis: "Hypernatraemia treatment.",
     disposition: "admit_monitor",
     severity: "critical",
@@ -601,8 +685,8 @@ const rules: DifferentialRule[] = [
     id: "hyponatraemia",
     condition: "Hyponatraemia",
     conditionPattern: /hyponatraemia|hyponatremia|low sodium|sodium.*(?:below|low)/,
-    match: (f) => (f.sodium !== null && f.sodium < 130) || /sodium.*below 130|hyponatraemia|hyponatremia|low sodium/.test(f.text),
-    missing: (f) => missingFacts(f, [["serum sodium", f.sodium !== null || /below 130|low sodium|hyponatraemia|hyponatremia/.test(f.text)], ["neurological emergency signs", /seizure|coma|cerebral herniation|no seizure|no coma/.test(f.text)], ["volume status", Boolean(f.volumeStatus)]]),
+    match: (f) => (f.sodium !== null && f.sodium < 130) || f.sodiumStatus === "low" || /sodium.*below 130|hyponatraemia|hyponatremia|low sodium/.test(f.text),
+    missing: (f) => missingFacts(f, [["serum sodium", f.sodium !== null || f.sodiumStatus === "low" || /below 130|low sodium|hyponatraemia|hyponatremia/.test(f.text)], ["neurological emergency signs", /seizure|coma|cerebral herniation|no seizure|no coma/.test(f.text)], ["volume status", Boolean(f.volumeStatus)]]),
     diagnosis: "Hyponatraemia emergency and volume-status management.",
     disposition: "admit_monitor",
     severity: "critical",
@@ -668,7 +752,7 @@ function missingQuestionSource(rule: DifferentialRule) {
 function formatRule(rule: DifferentialRule, facts: ClinicalFacts) {
   const band = rule.id === "burns" ? burnBand(facts) : null;
   const asthma = rule.id === "asthma" ? asthmaSeverity(facts) : null;
-  const branch = branchSpecific(rule, band, asthma);
+  const branch = branchSpecific(rule, band, asthma, facts);
   const tests = branch.tests?.length ? `\n\nRecommended diagnostic tests:\n${branch.tests.map((test) => `- ${test}`).join("\n")}` : "";
   const qualifier = band ? ` (${band} branch)` : asthma ? ` (${asthma === "failure" ? "respiratory failure" : asthma} branch)` : "";
   const source =
@@ -703,7 +787,7 @@ Source:
 Internal clinical guideline, section ${source}`;
 }
 
-function branchSpecific(rule: DifferentialRule, band: string | null, asthma: string | null) {
+function branchSpecific(rule: DifferentialRule, band: string | null, asthma: string | null, facts: ClinicalFacts) {
   if (rule.id === "burns") {
     if (band === "mild") {
       return {
@@ -769,6 +853,54 @@ function branchSpecific(rule: DifferentialRule, band: string | null, asthma: str
         tests: [] as string[],
         management:
           "Admit to a critical care area for possible intubation. Intubate if necessary. Administer aggressive bronchodilator and steroid therapy. Call a physician immediately.",
+      };
+    }
+  }
+
+  if (rule.id === "epigastric_pain") {
+    if (facts.bloodyVomitus === true && facts.shock === true) {
+      return {
+        diagnosis: "Presumed upper gastrointestinal bleeding with shock.",
+        disposition: "admit",
+        tests: ["Full blood count", "Renal function", "Liver function", "H. pylori antigen"],
+        management:
+          "Immediate resuscitation. Send FBC, renal and liver function tests, and H. pylori antigen. Admit for urgent surgical consultation. Start IV fluids according to hypovolaemic shock protocol. Give IV clarithromycin, IV Augmentin, IV ranitidine for patients over 16 years, and IV tranexamic acid 10 mg/kg per dose three times daily. Manage anaemia, thrombocytopenia, and deranged liver or renal function concurrently.",
+      };
+    }
+    if (facts.bloodyVomitus === true && facts.shock === false) {
+      return {
+        diagnosis: "Upper gastrointestinal bleeding without shock.",
+        disposition: "admit",
+        tests: ["Full blood count", "Renal function", "Liver function", "H. pylori antigen"],
+        management:
+          "Start IV normal saline while awaiting consultation. Admit for endoscopy and surgical review. Give clarithromycin, Augmentin, ranitidine, and tranexamic acid as in the bloody-vomitus pathway.",
+      };
+    }
+    if (facts.vomiting === true && facts.bloodyVomitus !== true && facts.shock === true) {
+      return {
+        diagnosis: "Severe gastritis or peptic ulcer disease with shock.",
+        disposition: "admit",
+        tests: ["Full blood count", "Renal function", "Liver function", "H. pylori antigen"],
+        management:
+          "Admit, resuscitate with IV fluids, and request surgical consultation. Give clarithromycin, Augmentin, and ranitidine. Tranexamic acid may be omitted if there is no bleeding.",
+      };
+    }
+    if (facts.vomiting === false && facts.shock === false && facts.hPylori === "negative") {
+      return {
+        diagnosis: "Stable mild epigastric pain with negative H. pylori.",
+        disposition: "outpatient",
+        tests: ["H. pylori antigen"],
+        management:
+          "Outpatient proton pump inhibitor such as esomeprazole. Over 12 years: 20 mg twice daily. Paediatric dosing by weight: 3.5 kg, 2.5 mg daily; 3.5-7.5 kg, 5 mg daily; over 7.5 kg, 10 mg daily. Follow up in 7 days.",
+      };
+    }
+    if (facts.vomiting === false && facts.shock === false && facts.hPylori === "positive") {
+      return {
+        diagnosis: "Stable mild epigastric pain with positive H. pylori.",
+        disposition: "outpatient",
+        tests: ["H. pylori antigen"],
+        management:
+          "Outpatient H. pylori eradication kit with esomeprazole, amoxicillin, and clarithromycin plus paracetamol. Follow up in 7 days.",
       };
     }
   }

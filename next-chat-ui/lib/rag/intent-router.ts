@@ -83,6 +83,22 @@ export function routeChatIntent(input: string): ChatIntent {
     };
   }
 
+  if (/^(what is|what are|what does|define|explain)\s+(cbc|fbc)\b|^what\s+(cbc|fbc)\s+means?\b/.test(text)) {
+    return {
+      type: "direct",
+      response:
+        "CBC means complete blood count. FBC means full blood count. In this guideline, the result can help choose a pathway: normal count, granulocytosis, lymphocytosis, thrombocytopenia, or low haemoglobin/anaemia.",
+    };
+  }
+
+  if (/^(what is|what are|what does|define|explain)\s+(gcs)\b|^what\s+gcs\s+means?\b/.test(text)) {
+    return {
+      type: "direct",
+      response:
+        "GCS means Glasgow Coma Scale. It is used to assess level of consciousness after head injury. In this guideline, GCS below 8 is severe head injury, GCS 8 to 12 is moderate, and GCS 13 or above requires checking associated high-risk features.",
+    };
+  }
+
   if (/\b(latest|new research|recent evidence|pubmed|uptodate|outside guideline|outside the guideline)\b/.test(text)) {
     return { type: "external_gap" };
   }
