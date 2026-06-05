@@ -721,6 +721,33 @@ export async function getRecentChatMessages(sessionId: string, limit = 8, userId
     }));
 }
 
+export async function clearChatSessionMessages(sessionId: string, userId?: number) {
+  await ensureChatTables();
+
+  await getPool().query(
+    `
+      DELETE FROM chat_messages
+      USING chat_sessions s
+      WHERE chat_messages.session_id = s.session_id
+        AND chat_messages.session_id = $1
+        AND ($2::bigint IS NULL OR s.user_id = $2)
+    `,
+    [sessionId, userId || null],
+  );
+
+  await getPool().query(
+    `
+      INSERT INTO chat_sessions (session_id, user_id, updated_at)
+      VALUES ($1, $2, now())
+      ON CONFLICT (session_id)
+      DO UPDATE SET
+        updated_at = now(),
+        user_id = COALESCE(chat_sessions.user_id, EXCLUDED.user_id)
+    `,
+    [sessionId, userId || null],
+  );
+}
+
 export async function getPathwayDetailsByTitle(title: string): Promise<PathwayDetails | null> {
   try {
     const result = await getPool().query<{

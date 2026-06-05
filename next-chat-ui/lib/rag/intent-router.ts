@@ -1,5 +1,6 @@
 export type ChatIntent =
   | { type: "direct"; response: string }
+  | { type: "context_reset" }
   | { type: "repeat"; focus?: "management" | "tests" | "source" | "all" }
   | { type: "completeness" }
   | { type: "confirmation" }
@@ -23,9 +24,17 @@ function normalized(text: string) {
 export function routeChatIntent(input: string): ChatIntent {
   const text = normalized(input);
   const hasClinicalSignal =
-    /\b(?:patient|child|woman|man|boy|girl|infant|baby|pregnan\w*|gestation\w*|bleed\w*|fever|shock|pneumonia|asthma\w*|wheez\w*|burn\w*|vomit\w*|pain|diarrh\w*|cough\w*|breath\w*|oxygen|spo2|pulse|blood pressure|potassium|sodium|glucose|ketone\w*|dehydrat\w*|convulsion\w*|seizure\w*|haemoglobin|hemoglobin|malaria|cbc|fbc|tbsa|gcs|insulin|fluid\w*|antibiotic\w*|test\w*|diagnostic\w*|manage\w*|treat\w*|dose)\b/.test(
+    /\b(?:patient|child|woman|man|boy|girl|infant|baby|pregnan\w*|gestation\w*|bleed\w*|fever|shock|pneumonia|asthma\w*|wheez\w*|burn\w*|injur\w*|trauma|vomit\w*|pain|diarrh\w*|cough\w*|breath\w*|oxygen|spo2|pulse|blood pressure|potassium|sodium|glucose|ketone\w*|dehydrat\w*|convulsion\w*|seizure\w*|haemoglobin|hemoglobin|malaria|cbc|fbc|tbsa|gcs|insulin|fluid\w*|antibiotic\w*|test\w*|diagnostic\w*|manage\w*|treat\w*|dose)\b/.test(
       text,
     ) || /\d/.test(text);
+
+  if (
+    /\b(?:new patient|new case|different patient|another patient|separate case|different presentation|start over|start fresh|clear case|clear context|forget previous|forget the previous|reset case)\b/.test(
+      text,
+    )
+  ) {
+    return { type: "context_reset" };
+  }
 
   if (/^(stop|halt|pause|cancel|abort|end|enough|close)\.?$/.test(text)) {
     return { type: "unclear", reason: "control" };

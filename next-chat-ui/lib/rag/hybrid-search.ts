@@ -1,6 +1,7 @@
 import { Document } from "@langchain/core/documents";
 import { keywordSearchGuideline } from "@/lib/chat-store";
 import { RAG_CONFIG } from "@/lib/rag/config";
+import { hasClearConditionPhrase, normalizeClinicalQueryText } from "@/lib/rag/semantic-normalizer";
 import { searchRelevantChunks } from "@/lib/rag/vector-store";
 
 function documentKey(doc: Document) {
@@ -13,9 +14,30 @@ function rrfScore(rank: number) {
 }
 
 export async function searchHybridGuideline(query: string, k = RAG_CONFIG.retrievalK) {
+  const normalizedQuery = normalizeClinicalQueryText(query);
+  const searchQuery = normalizedQuery ? `${query}\n${normalizedQuery}` : query;
+
+  if (hasClearConditionPhrase(query)) {
+    const keywordHits = await keywordSearchGuideline(searchQuery, k * 2);
+    if (keywordHits.length) {
+      return keywordHits.slice(0, k).map(
+        (hit, rank) =>
+          new Document({
+            pageContent: hit.content,
+            metadata: {
+              ...hit.metadata,
+              score: typeof hit.metadata.keywordScore === "number" ? hit.metadata.keywordScore : undefined,
+              hybridScore: rrfScore(rank),
+              retrievalMode: "keyword-fast",
+            },
+          }),
+      );
+    }
+  }
+
   const [vectorDocs, keywordHits] = await Promise.all([
-    searchRelevantChunks(query, k * 2),
-    keywordSearchGuideline(query, k * 2),
+    searchRelevantChunks(searchQuery, k * 2),
+    keywordSearchGuideline(searchQuery, k * 2),
   ]);
 
   const docsByKey = new Map<string, Document>();

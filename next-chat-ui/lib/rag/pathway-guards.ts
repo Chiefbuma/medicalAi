@@ -6,6 +6,7 @@ import {
   type PathwayNode,
 } from "@/lib/chat-store";
 import { booleanConcept } from "@/lib/rag/clinical-negation";
+import { normalizeClinicalQueryText } from "@/lib/rag/semantic-normalizer";
 
 type GuardResult = {
   condition: string;
@@ -46,7 +47,7 @@ function has(text: string, pattern: RegExp) {
 }
 
 function normalizeClinicalText(text: string) {
-  return text
+  const base = text
     .toLowerCase()
     .replace(/full-thickness/g, "full thickness")
     .replace(/partial-thickness/g, "partial thickness")
@@ -54,6 +55,8 @@ function normalizeClinicalText(text: string) {
     .replace(/hyper-resonant/g, "hyper resonant")
     .replace(/\s+/g, " ")
     .trim();
+  const semantic = normalizeClinicalQueryText(base);
+  return semantic && semantic !== base ? `${base} ${semantic}` : base;
 }
 
 function numberAfter(text: string, pattern: RegExp) {
@@ -397,7 +400,7 @@ function detectConditionKeys(text: string) {
     ["pv_bleeding", /vaginal bleeding|pv bleeding|per vaginal|uterine bleeding|antepartum|abortion|miscarriage|pregnan.*bleed|bleed.*pregnan|gestation.*bleed|bleed.*gestation/],
     ["acute_fever", /fever|hotness|pyrexia|malaria|convulsion.*fever|ear pain|otitis|dysuria|urinary|pneumonia|fast breathing|difficult breathing/],
     ["bp_pregnancy", /pregnan.*(?:bp|blood pressure|hypertension|pre-?eclampsia)|(?:bp|blood pressure|hypertension|pre-?eclampsia).*pregnan/],
-    ["head_injury", /head injury|head trauma|gcs|traumatic brain|csf otorrhoea|csf rhinorrhoea/],
+    ["head_injury", /head injur(?:y|ies)|head trauma|gcs|traumatic brain|csf otorrhoea|csf rhinorrhoea|injur(?:y|ies).*head|trauma.*head/],
     ["abdominal_injury", /abdominal injury|abdominal trauma|penetrating abdomen|blunt abdomen|abdominal wound/],
     ["chest_trauma", /chest trauma|chest injury|thoracic trauma|pneumothorax|haemothorax|hemothorax|hyper-?resonant|dull percussion/],
     ["epigastric_pain", /epigastric|upper abdominal|gastritis|peptic|h\.?\s*pylori|bloody vomit|haematemesis|hematemesis/],
@@ -423,7 +426,7 @@ function detectConditionKeys(text: string) {
 }
 
 function hasExplicitConditionSignal(text: string) {
-  return /diabetic ketoacidosis|\bdka\b|burn|scald|head injury|head trauma|chest trauma|chest injury|abdominal injury|abdominal trauma|vaginal bleeding|pv bleeding|per vaginal|antepartum|postpartum haemorrhage|postpartum hemorrhage|\bpph\b|asthma|pneumonia|fast breathing|difficult breathing|difficulty breathing|chest indrawing|hyperkalaemia|hyperkalemia|hyponatraemia|hyponatremia|hypernatraemia|hypernatremia|epigastric|peptic|gastritis/.test(
+  return /diabetic ketoacidosis|\bdka\b|burn|scald|head injur(?:y|ies)|head trauma|chest trauma|chest injury|abdominal injury|abdominal trauma|vaginal bleeding|pv bleeding|per vaginal|antepartum|postpartum haemorrhage|postpartum hemorrhage|\bpph\b|asthma|pneumonia|fast breathing|difficult breathing|difficulty breathing|chest indrawing|hyperkalaemia|hyperkalemia|hyponatraemia|hyponatremia|hypernatraemia|hypernatremia|epigastric|peptic|gastritis/.test(
     text,
   );
 }

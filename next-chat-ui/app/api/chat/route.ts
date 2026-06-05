@@ -10,7 +10,13 @@ import {
 import { searchHybridGuideline } from "@/lib/rag/hybrid-search";
 import { RAG_CONFIG } from "@/lib/rag/config";
 import { buildPathwayGuardedAnswer } from "@/lib/rag/pathway-guards";
-import { assertUserCanUseSession, getRecentChatMessages, saveChatMessage, type StoredChatMessage } from "@/lib/chat-store";
+import {
+  assertUserCanUseSession,
+  clearChatSessionMessages,
+  getRecentChatMessages,
+  saveChatMessage,
+  type StoredChatMessage,
+} from "@/lib/chat-store";
 import { conceptMemoryState } from "@/lib/rag/clinical-negation";
 import { getSessionUserId } from "@/lib/auth-session";
 import { routeChatIntent } from "@/lib/rag/intent-router";
@@ -93,8 +99,9 @@ function conceptState(message: string, concept: RegExp, negative: RegExp | undef
 function detectConditionMemory(messages: string[]) {
   const text = messages.join("\n").toLowerCase();
   const conditions: string[] = [];
+  const notPregnant = /not pregnant|non-pregnant|non pregnant|pregnancy test negative|negative pregnancy test/.test(text);
 
-  if (/pregnan.*bleed|bleed.*pregnan|vaginal bleeding|pv bleeding|per vaginal|abortion|miscarriage/.test(text)) {
+  if (!notPregnant && /pregnan.*bleed|bleed.*pregnan|abortion|miscarriage/.test(text)) {
     conditions.push("per vaginal bleeding in pregnancy");
   } else if (/vaginal bleeding|pv bleeding|per vaginal|uterine bleeding/.test(text)) {
     conditions.push("per vaginal bleeding");
@@ -118,6 +125,10 @@ function detectConditionMemory(messages: string[]) {
 
   if (/pneumonia|fast breathing|difficult breathing|difficulty breathing|chest indrawing/.test(text)) {
     conditions.push("pneumonia / difficult breathing");
+  }
+
+  if (/head injur(?:y|ies)|head trauma|traumatic brain|gcs|injur(?:y|ies).*head|trauma.*head/.test(text)) {
+    conditions.push("head injury");
   }
 
   return conditions;
@@ -333,6 +344,16 @@ function buildSameSessionCaseMemory(recentMessages: StoredChatMessage[], chatInp
   return lines.join("\n");
 }
 
+function hasClinicalPayload(chatInput: string) {
+  const text = chatInput.toLowerCase();
+  return (
+    detectConditionMemory([chatInput]).length > 0 ||
+    /vomit|bleed|fever|shock|pregnan|gestation|pneumonia|wheez|asthma|burn|potassium|sodium|glucose|ketone|dehydrat|convulsion|seizure|pain|diarrh|cough|breath|oxygen|spo2|pulse|blood pressure|haemoglobin|hemoglobin|malaria|cbc|fbc|tbsa|gcs|injury|trauma/.test(
+      text,
+    )
+  );
+}
+
 function cleanAssistantOutput(text: string) {
   const lines = text
     .replace(/\r\n/g, "\n")
@@ -350,12 +371,16 @@ function cleanAssistantOutput(text: string) {
 }
 
 function shouldAskContextCheck(chatInput: string, contextualInput: string) {
+  if (!contextualInput.includes("Same-session case memory")) return false;
+
+  const memory = previousCaseMemoryFromContext(contextualInput).toLowerCase();
+  if (!memory || /no structured case facts/.test(memory)) return false;
+
   const text = chatInput.toLowerCase();
   if (/new patient|new case|different patient|another patient|separate case|different presentation/.test(text)) {
     return true;
   }
 
-  const memory = previousCaseMemoryFromContext(contextualInput).toLowerCase();
   const previousConditions = new Set(
     (memory.match(/condition under discussion:\s*([^\n.]+)/)?.[1] || "")
       .split(",")
@@ -418,11 +443,7 @@ function buildConversationalAnswer(chatInput: string, contextualInput: string) {
   const text = chatInput.toLowerCase().trim();
   const memory = caseMemoryFromContext(contextualInput);
   const hasCase = Boolean(memory && !/No structured case facts/.test(memory));
-  const hasClinicalPayload =
-    detectConditionMemory([chatInput]).length > 0 ||
-    /vomit|bleed|fever|shock|pregnan|gestation|pneumonia|wheez|asthma|burn|potassium|sodium|glucose|ketone|dehydrat|convulsion|seizure|pain|diarrh|cough|breath|oxygen|spo2|pulse|blood pressure|haemoglobin|hemoglobin|malaria|cbc|fbc/.test(
-      text,
-    );
+  const clinicalPayload = hasClinicalPayload(chatInput);
 
   if (/^(hi|hello|hey|good morning|good afternoon|good evening)\b/.test(text)) {
     return `Hello. I can help you match the patient presentation to the internal clinical guideline.
@@ -463,7 +484,7 @@ Which exact statement should I check? For example, ask about the diagnosis, the 
 For this case, do you mean where in the guideline, which diagnosis/pathway, why that pathway was chosen, or when to admit/escalate?`;
   }
 
-  if (/^(same patient|same case|same presentation)\b/.test(text) && !hasClinicalPayload) {
+  if (/^(same patient|same case|same presentation)\b/.test(text) && !clinicalPayload) {
     return hasCase
       ? `Understood. I will continue treating this as the same patient in this chat.
 
@@ -472,7 +493,7 @@ ${memory}`
       : "Understood. I will treat this chat as one patient case. Please give me the main presentation and key clinical facts.";
   }
 
-  if (/^(new patient|new case|different patient|another patient|separate case)\b/.test(text)) {
+  if (/^(new patient|new case|different patient|another patient|separate case)\b/.test(text) && !clinicalPayload) {
     return "Understood. Please start with the new patient's main presentation, key vitals, and relevant positives or negatives.";
   }
 
@@ -807,7 +828,17 @@ function answerCompletenessCheck(messages: StoredChatMessage[], contextualInput:
     .join("\n");
 }
 
-function answerConfirmation(contextualInput: string) {
+function answerConfirmation(contextualInput: string, messages: StoredChatMessage[]) {
+  const previousAssistant = latestAssistantMessage(messages)?.toLowerCase() || "";
+
+  if (/please confirm: is this the same patient.*new patient\/new case/i.test(previousAssistant)) {
+    return `I need one clear answer before I continue so I do not mix two patient cases.
+
+Please reply with either:
+- same patient
+- new patient`;
+  }
+
   const memory = caseMemoryFromContext(contextualInput);
   if (memory && !/No structured case facts/.test(memory)) {
     return `Understood. I will keep using this same case context:\n${memory}`;
@@ -970,11 +1001,17 @@ function answerNonRetrievalIntent(
   routedIntent: ReturnType<typeof routeChatIntent>,
   messages: StoredChatMessage[],
   contextualInput: string,
+  chatInput: string,
 ) {
   if (routedIntent.type === "direct") return routedIntent.response;
+  if (routedIntent.type === "context_reset") {
+    return hasClinicalPayload(chatInput)
+      ? null
+      : "Understood. Starting fresh. Please give me the new patient's main complaint, key vitals, and relevant positives or negatives.";
+  }
   if (routedIntent.type === "repeat") return repeatPreviousAnswer(routedIntent.focus, messages);
   if (routedIntent.type === "completeness") return answerCompletenessCheck(messages, contextualInput);
-  if (routedIntent.type === "confirmation") return answerConfirmation(contextualInput);
+  if (routedIntent.type === "confirmation") return answerConfirmation(contextualInput, messages);
   if (routedIntent.type === "clarification") return answerClarification(routedIntent.term, messages, contextualInput);
   if (routedIntent.type === "disposition_question") {
     return answerDispositionQuestion(routedIntent.target, messages, contextualInput);
@@ -1022,13 +1059,19 @@ export async function POST(req: Request) {
       }
     }
 
-    const previousMessages = sessionId ? await getRecentChatMessages(sessionId, 40, userId) : [];
     const routedIntent = routeChatIntent(chatInput);
+    const isContextReset = routedIntent.type === "context_reset";
+
+    if (isContextReset && sessionId) {
+      await clearChatSessionMessages(sessionId, userId);
+    }
+
+    const previousMessages = isContextReset || !sessionId ? [] : await getRecentChatMessages(sessionId, 40, userId);
     const contextualInput = await getConversationContext(sessionId, userId, chatInput);
 
     await saveChatMessageBestEffort(sessionId, userId, "user", chatInput);
 
-    const nonRetrievalAnswer = answerNonRetrievalIntent(routedIntent, previousMessages, contextualInput);
+    const nonRetrievalAnswer = answerNonRetrievalIntent(routedIntent, previousMessages, contextualInput, chatInput);
     const conversationalAnswer = nonRetrievalAnswer || buildConversationalAnswer(chatInput, contextualInput);
     const contextCheckAnswer = conversationalAnswer ? null : buildContextCheckAnswer(chatInput, contextualInput);
     const clinicalQuery =

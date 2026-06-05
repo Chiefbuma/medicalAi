@@ -1,4 +1,5 @@
 import type { Document } from "@langchain/core/documents";
+import { normalizeClinicalQueryText } from "@/lib/rag/semantic-normalizer";
 
 export const MEDICAL_SYSTEM_PROMPT = `You are a clinical guideline assistant.
 
@@ -137,7 +138,9 @@ ${sources}`;
 }
 
 export function buildRetrievalQuery(question: string) {
-  const normalized = question.replace(/\bpresu+re\b/gi, "pressure").replace(/\bbp\b/gi, "blood pressure");
+  const corrected = question.replace(/\bpresu+re\b/gi, "pressure").replace(/\bbp\b/gi, "blood pressure");
+  const semantic = normalizeClinicalQueryText(corrected);
+  const normalized = semantic && semantic !== corrected.toLowerCase().trim() ? `${corrected}\n${semantic}` : corrected;
   const bloodPressure = extractBloodPressure(normalized);
 
   if (/asthma|asmatic|asthmatic|wheeze|wheez|pulsus|paradoxus|end-?expiration|respiratory distress/i.test(normalized)) {
