@@ -34,6 +34,24 @@ function firstNumber(text: string, patterns: RegExp[]) {
   return null;
 }
 
+function activeClinicalText(input: string) {
+  const standalone = input.match(
+    /Use these current patient facts as the active case:\n([\s\S]*?)\nCurrent doctor question\/update:\s*([\s\S]*)$/i,
+  );
+  if (standalone) {
+    return `${standalone[1].trim()}\n${standalone[2].trim()}`;
+  }
+
+  const sameSession = input.match(
+    /Updated case memory including current message:\n([\s\S]*?)\nCurrent doctor message:\s*([\s\S]*)$/i,
+  );
+  if (sameSession) {
+    return `${sameSession[1].trim()}\n${sameSession[2].trim()}`;
+  }
+
+  return input;
+}
+
 function booleanFact(text: string, positive: RegExp, negative: RegExp) {
   if (negative.test(text)) return false;
   if (positive.test(text)) return true;
@@ -97,7 +115,7 @@ function cbcStatus(text: string) {
 }
 
 function extractClinicalFacts(input: string) {
-  const text = input.toLowerCase();
+  const text = activeClinicalText(input).toLowerCase();
   const ageYears = firstNumber(text, [
     /(?:age|aged)?\s*(\d{1,3})\s*(?:years|year|yrs|yr)\b/,
     /(?:age|aged)\s*(?:is|=|:)?\s*(\d{1,3})\b/,

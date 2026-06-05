@@ -165,6 +165,15 @@ export function routeChatIntent(input: string): ChatIntent {
     return { type: "external_gap" };
   }
 
+  if (/^(?:i meant|i mean|actually|correction|sorry|wait|scratch that|let me correct|to correct|instead)\b/.test(text)) {
+    return {
+      type: "clinical",
+      isFollowUp: true,
+      wantsDiagnostics: false,
+      wantsManagement: false,
+    };
+  }
+
   if (/^(what is|what are|define|definition of|explain what)\b/.test(text)) {
     const term =
       text.match(/^(?:what is|what are|define|definition of|explain what)\s+(.+?)(?:\?|$)/)?.[1]?.trim() ||
